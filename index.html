@@ -1,0 +1,109 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Belconnen shops</title>
+    <link rel="stylesheet" href="scripts/leaflet.css" />
+    <script src="scripts/leaflet.js"></script>
+    <script src="scripts/rdflib.min.js"></script>
+    <script src="scripts/wicket.js"></script>
+    <script src="scripts/rdf_geojson.js"></script>
+    <style>
+      .insetmap {
+        box-shadow: 2px 2px grey;
+      }
+    </style>
+  </head>
+  <body>
+    <object id="map" type="image/svg+xml" data="belco.svg"></object>
+
+    <script>
+      //   // create the tile layer with correct attribution
+      var osmUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+      store = $rdf.graph();
+      fetcher = new $rdf.Fetcher(store);
+      zonedoc =
+        "https://josephguillaume.github.io/belco_map/zones_canberra.ttl";
+      const belconnen_zones = [
+        "Belco Markets",
+        "Beissel Street",
+        "Emu Bank",
+        "Westfield Belconnen",
+        "Chandler st",
+        "Josephson",
+        "Lathlain st",
+        "Nettlefold st",
+        "Benjamin Way"
+      ];
+
+      var svgdoc, landuse, zones;
+      document
+        .querySelector("object")
+        .addEventListener("load", async function () {
+          svgdoc = document.querySelector("object").contentDocument;
+
+          await fetcher.load(zonedoc);
+          landuse = rdfToGeoJSON(store, zonedoc);
+          landuse.features = landuse.features.concat({
+            type: "Feature",
+            properties: { Name: "Belconnen" },
+            geometry: {
+              type: "MultiPolygon",
+              coordinates: [].concat(
+                landuse.features
+                  .filter(x => belconnen_zones.includes(x.properties.Name))
+                  // TODO: not sure why they are different structures
+                  .map(x =>
+                    x.geometry.coordinates[0].length == 1
+                      ? x.geometry.coordinates[0]
+                      : x.geometry.coordinates
+                  )
+              )
+            }
+          });
+
+          zones = landuse.features
+            .filter(x => x.properties.Name)
+            .filter(x => !belconnen_zones.includes(x.properties.Name))
+            .map(x => x.properties.Name.toLowerCase().replace(/ /g, "_"));
+          zones.forEach(inset_map);
+        });
+
+      function inset_map(placeholder_id) {
+        var placeholder = svgdoc.getElementById(placeholder_id);
+        div = document.createElement("div");
+        div.classList.add("insetmap");
+        div.style.position = "absolute";
+        div.style.width = placeholder.width.baseVal.value + "mm";
+        div.style.height = placeholder.height.baseVal.value + "mm";
+        div.style.top = placeholder.y.baseVal.value + "mm";
+        div.style.marginTop = document.querySelector("object").offsetTop;
+        div.style.marginLeft = document.querySelector("object").offsetLeft;
+        div.style.left = placeholder.x.baseVal.value + "mm";
+        div.id = "map_" + placeholder_id;
+        document.querySelector("body").appendChild(div);
+        var map = L.map(div.id, {
+          zoomControl: false,
+          attributionControl: false
+        });
+        var osm = new L.TileLayer(osmUrl, {
+          minZoom: 3,
+          maxNativeZoom: 19,
+          maxZoom: 20
+        });
+        map.addLayer(osm);
+        var feature = landuse.features.filter(
+          x =>
+            x.properties.Name &&
+            x.properties.Name.toLowerCase().replace(/ /g, "_") == placeholder_id
+        );
+        if (feature.length > 0) {
+          layer = L.geoJSON(feature[0], {
+            style: { fill: null, color: null }
+          }).addTo(map);
+          map.fitBounds(layer.getBounds());
+        }
+      }
+    </script>
+  </body>
+</html>
